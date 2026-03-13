@@ -1,0 +1,1249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Beyond Mac Mini: Scaling Verifiable AI Agents with TEEs</title>
+    <link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=clash-display@400,500,600,700&f[]=satoshi@400,500,700&display=swap">
+    <style>
+        /* ===========================================
+           THEME & CUSTOM PROPERTIES
+           =========================================== */
+        :root {
+            --bg: #080c18;
+            --bg-surface: #0e1424;
+            --bg-card: #182038;
+            --border: #253050;
+            --text: #ffffff;
+            --text-mid: #d0d8e8;
+            --text-dim: #94a3b8;
+            --accent: #00EC97;
+            --accent-glow: rgba(0, 236, 151, 0.2);
+            --accent-blue: #00b8ff;
+            --danger: #ff5470;
+
+            --font-display: 'Clash Display', system-ui, sans-serif;
+            --font-body: 'Satoshi', system-ui, sans-serif;
+
+            --title-size: clamp(2.8rem, 7vw, 6rem);
+            --h2-size: clamp(1.8rem, 4.5vw, 3.5rem);
+            --h3-size: clamp(1.2rem, 2.8vw, 1.8rem);
+            --body-size: clamp(1rem, 1.8vw, 1.4rem);
+            --big-body: clamp(1.1rem, 2.2vw, 1.65rem);
+            --small-size: clamp(0.8rem, 1.2vw, 1rem);
+
+            --slide-padding: clamp(2rem, 5vw, 5rem);
+            --content-gap: clamp(0.8rem, 2.5vw, 2.5rem);
+            --card-gap: clamp(0.5rem, 1.5vw, 1rem);
+
+            --ease: cubic-bezier(0.16, 1, 0.3, 1);
+            --ease-back: cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        /* ===========================================
+           RESET & BASE
+           =========================================== */
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html {
+            height: 100%;
+            scroll-snap-type: y mandatory;
+            scroll-behavior: smooth;
+            overflow-x: hidden;
+        }
+
+        body {
+            font-family: var(--font-body);
+            background: var(--bg);
+            color: var(--text);
+            height: 100%;
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Subtle grid background */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
+            background-size: 60px 60px;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* ===========================================
+           SLIDE LAYOUT
+           Each slide = exact viewport height, no scroll
+           =========================================== */
+        .slide {
+            width: 100vw;
+            height: 100vh;
+            height: 100dvh;
+            overflow: hidden;
+            scroll-snap-align: start;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            padding: var(--slide-padding);
+        }
+
+        .slide-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            max-height: 100%;
+            max-width: min(92vw, 1100px);
+            overflow: hidden;
+            text-align: center;
+            gap: var(--content-gap);
+            position: relative;
+            z-index: 1;
+        }
+
+        .slide-content.left-align {
+            text-align: left;
+            align-items: flex-start;
+        }
+
+        /* ===========================================
+           TYPOGRAPHY
+           =========================================== */
+        h1 {
+            font-family: var(--font-display);
+            font-size: var(--title-size);
+            font-weight: 700;
+            line-height: 1.05;
+            letter-spacing: -0.03em;
+        }
+
+        h2 {
+            font-family: var(--font-display);
+            font-size: var(--h2-size);
+            font-weight: 600;
+            line-height: 1.15;
+            letter-spacing: -0.02em;
+        }
+
+        h3 {
+            font-family: var(--font-display);
+            font-size: var(--h3-size);
+            font-weight: 600;
+            line-height: 1.3;
+        }
+
+        p, li {
+            font-size: var(--body-size);
+            line-height: 1.6;
+            color: var(--text-mid);
+        }
+
+        .big { font-size: var(--big-body); }
+        .accent { color: var(--accent); }
+        .accent-blue { color: var(--accent-blue); }
+        .dim { color: var(--text-dim); }
+        .bold { font-weight: 700; color: var(--text); }
+        .mono { font-family: 'SF Mono', 'Fira Code', monospace; }
+
+        .tag {
+            display: inline-block;
+            padding: clamp(0.2rem, 0.5vw, 0.35rem) clamp(0.5rem, 1vw, 0.75rem);
+            background: rgba(0, 236, 151, 0.1);
+            border: 1px solid rgba(0, 236, 151, 0.25);
+            border-radius: 100px;
+            font-size: var(--small-size);
+            color: var(--accent);
+            font-weight: 500;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
+        .separator {
+            width: clamp(40px, 5vw, 60px);
+            height: 2px;
+            background: var(--accent);
+            border-radius: 2px;
+            box-shadow: 0 0 12px var(--accent-glow);
+        }
+
+        /* ===========================================
+           BACKGROUND ORBS (ambient glow)
+           =========================================== */
+        .bg-orb {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(100px);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .orb-green {
+            background: var(--accent);
+            opacity: 0.07;
+        }
+
+        .orb-blue {
+            background: var(--accent-blue);
+            opacity: 0.05;
+        }
+
+        /* ===========================================
+           REVEAL ANIMATIONS
+           Triggered when slide gets .visible class
+           =========================================== */
+        .reveal {
+            opacity: 1;
+        }
+
+        /* Progressive step reveal (keyboard-driven) */
+        [data-step] {
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.15s ease;
+        }
+
+        [data-step].step-visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        /* ===========================================
+           CONCEPT CARDS (How TEEs Work slide)
+           =========================================== */
+        .concept-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: var(--card-gap);
+            width: 100%;
+            max-width: min(85vw, 900px);
+        }
+
+        .concept-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: clamp(8px, 1vw, 14px);
+            padding: clamp(0.8rem, 2vw, 1.5rem);
+            text-align: left;
+            transition: border-color 0.4s var(--ease), box-shadow 0.4s var(--ease);
+        }
+
+        .concept-card.step-visible {
+            border-color: rgba(0, 236, 151, 0.3);
+            box-shadow: 0 0 20px rgba(0, 236, 151, 0.05);
+        }
+
+        .concept-icon {
+            font-size: clamp(1.4rem, 2.5vw, 2rem);
+            margin-bottom: clamp(0.2rem, 0.5vw, 0.4rem);
+        }
+
+        .concept-card h3 {
+            margin-bottom: clamp(0.15rem, 0.5vw, 0.35rem);
+            font-size: clamp(0.85rem, 1.8vw, 1.15rem);
+        }
+
+        .concept-card p {
+            font-size: var(--body-size);
+            color: var(--text-mid);
+            line-height: 1.4;
+        }
+
+        /* ===========================================
+           TEE DIAGRAM (visual boundary)
+           =========================================== */
+        .tee-diagram {
+            width: 100%;
+            max-width: min(85vw, 800px);
+            display: flex;
+            justify-content: center;
+        }
+
+        .processor {
+            width: 100%;
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: clamp(10px, 1.5vw, 16px);
+            padding: clamp(1rem, 2.5vw, 2rem);
+            position: relative;
+        }
+
+        .processor-label {
+            position: absolute;
+            top: clamp(0.4rem, 1vw, 0.75rem);
+            left: clamp(0.6rem, 1.5vw, 1rem);
+            font-size: var(--body-size);
+            color: var(--text-dim);
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        .zones {
+            display: flex;
+            gap: clamp(0.5rem, 1.5vw, 1.5rem);
+            align-items: stretch;
+            margin-top: clamp(0.5rem, 1vw, 0.75rem);
+        }
+
+        .zone {
+            flex: 1;
+            border-radius: clamp(6px, 1vw, 10px);
+            padding: clamp(0.6rem, 1.5vw, 1.25rem);
+            display: flex;
+            flex-direction: column;
+            gap: clamp(0.3rem, 0.8vw, 0.6rem);
+        }
+
+        .zone-untrusted {
+            background: rgba(255, 84, 112, 0.05);
+            border: 1px solid rgba(255, 84, 112, 0.15);
+        }
+
+        .zone-trusted {
+            background: rgba(0, 236, 151, 0.05);
+            border: 1px solid rgba(0, 236, 151, 0.3);
+            box-shadow: 0 0 25px rgba(0, 236, 151, 0.08);
+        }
+
+        .zone-label {
+            font-family: var(--font-display);
+            font-size: var(--body-size);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: clamp(0.15rem, 0.5vw, 0.3rem);
+        }
+
+        .zone-untrusted .zone-label { color: var(--danger); }
+        .zone-trusted .zone-label { color: var(--accent); }
+
+        .zone-item {
+            font-size: var(--big-body);
+            display: flex;
+            align-items: center;
+            gap: clamp(0.3rem, 0.6vw, 0.5rem);
+        }
+
+        .x-mark {
+            color: var(--danger);
+            font-weight: 700;
+            font-size: var(--big-body);
+        }
+
+        .check-mark {
+            color: var(--accent);
+            font-weight: 700;
+            font-size: var(--big-body);
+        }
+
+        .barrier {
+            width: 3px;
+            background: linear-gradient(to bottom, transparent, var(--accent), transparent);
+            border-radius: 3px;
+            flex-shrink: 0;
+            box-shadow: 0 0 12px var(--accent-glow);
+        }
+
+        /* ===========================================
+           ARCHITECTURE FLOW
+           =========================================== */
+        .arch-flow {
+            display: flex;
+            align-items: center;
+            gap: clamp(0.4rem, 1.2vw, 1rem);
+            width: 100%;
+            max-width: min(90vw, 950px);
+            justify-content: center;
+            flex-wrap: nowrap;
+        }
+
+        .arch-node {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: clamp(8px, 1vw, 12px);
+            padding: clamp(0.5rem, 1.2vw, 1rem) clamp(0.6rem, 1.5vw, 1.25rem);
+            text-align: center;
+            flex-shrink: 0;
+        }
+
+        .arch-node.highlighted {
+            border-color: rgba(0, 236, 151, 0.4);
+            box-shadow: 0 0 20px rgba(0, 236, 151, 0.1);
+            background: rgba(0, 236, 151, 0.05);
+        }
+
+        .arch-node-icon {
+            font-size: clamp(1.4rem, 2.5vw, 2rem);
+            margin-bottom: clamp(0.15rem, 0.4vw, 0.3rem);
+        }
+
+        .arch-node-label {
+            font-family: var(--font-display);
+            font-size: clamp(0.9rem, 1.6vw, 1.2rem);
+            font-weight: 600;
+        }
+
+        .arch-node-detail {
+            font-size: clamp(0.75rem, 1.1vw, 0.95rem);
+            color: var(--text-dim);
+            margin-top: 4px;
+        }
+
+        .arch-arrow {
+            color: var(--text-dim);
+            font-size: clamp(0.8rem, 1.5vw, 1.2rem);
+            flex-shrink: 0;
+        }
+
+        .arch-arrow.accent { color: var(--accent); }
+
+        /* ===========================================
+           SCALING VISUAL (Beyond Mac Mini)
+           =========================================== */
+        .scale-comparison {
+            display: flex;
+            align-items: center;
+            gap: clamp(1rem, 3vw, 3rem);
+            width: 100%;
+            max-width: min(85vw, 800px);
+            justify-content: center;
+        }
+
+        .scale-box {
+            text-align: center;
+        }
+
+        .scale-icon {
+            font-size: clamp(2rem, 4vw, 3.5rem);
+            margin-bottom: clamp(0.3rem, 0.8vw, 0.5rem);
+        }
+
+        .scale-label {
+            font-family: var(--font-display);
+            font-size: clamp(0.8rem, 1.5vw, 1.1rem);
+            font-weight: 600;
+        }
+
+        .scale-detail {
+            font-size: var(--small-size);
+            color: var(--text-dim);
+        }
+
+        .scale-arrow {
+            font-size: clamp(1.5rem, 3vw, 2.5rem);
+            color: var(--accent);
+        }
+
+        .scale-multi {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: clamp(0.3rem, 0.6vw, 0.5rem);
+        }
+
+        .scale-multi-item {
+            width: clamp(1.8rem, 3.5vw, 2.8rem);
+            height: clamp(1.8rem, 3.5vw, 2.8rem);
+            background: rgba(0, 236, 151, 0.1);
+            border: 1px solid rgba(0, 236, 151, 0.3);
+            border-radius: clamp(4px, 0.5vw, 6px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: clamp(0.6rem, 1.2vw, 0.9rem);
+        }
+
+        /* ===========================================
+           MATTERS LIST (Why This Matters)
+           =========================================== */
+        .matters-list {
+            display: flex;
+            flex-direction: column;
+            gap: clamp(0.6rem, 1.5vw, 1.2rem);
+            width: 100%;
+            max-width: min(85vw, 750px);
+        }
+
+        .matters-item {
+            display: flex;
+            align-items: baseline;
+            gap: clamp(0.5rem, 1.2vw, 1rem);
+            text-align: left;
+        }
+
+        .matters-label {
+            font-family: var(--font-display);
+            font-size: clamp(0.7rem, 1.2vw, 0.9rem);
+            font-weight: 600;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            flex-shrink: 0;
+            min-width: clamp(80px, 12vw, 140px);
+        }
+
+        .matters-text {
+            font-size: var(--big-body);
+            color: var(--text-mid);
+        }
+
+        /* ===========================================
+           SHIFT STATEMENT
+           =========================================== */
+        .shift-statement {
+            display: flex;
+            align-items: center;
+            gap: clamp(0.5rem, 1.5vw, 1.5rem);
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .shift-from {
+            font-family: var(--font-display);
+            font-size: clamp(1rem, 2.5vw, 1.8rem);
+            color: var(--text-dim);
+            text-decoration: line-through;
+            text-decoration-color: var(--danger);
+        }
+
+        .shift-arrow {
+            font-size: clamp(1.2rem, 2.5vw, 2rem);
+            color: var(--accent);
+        }
+
+        .shift-to {
+            font-family: var(--font-display);
+            font-size: clamp(1rem, 2.5vw, 1.8rem);
+            color: var(--accent);
+            font-weight: 600;
+        }
+
+        /* ===========================================
+           PROBLEM ITEMS
+           =========================================== */
+        .problem-item {
+            display: flex;
+            align-items: center;
+            gap: clamp(0.4rem, 1vw, 0.75rem);
+            font-size: var(--big-body);
+            color: var(--text-mid);
+        }
+
+        .problem-icon {
+            font-size: clamp(1rem, 2vw, 1.4rem);
+            flex-shrink: 0;
+        }
+
+        .big-question {
+            font-family: var(--font-display);
+            font-size: clamp(1.1rem, 2.8vw, 2rem);
+            font-weight: 600;
+            color: var(--accent);
+            line-height: 1.25;
+            margin-top: clamp(0.3rem, 1vw, 0.75rem);
+        }
+
+        /* ===========================================
+           POLL VISUAL
+           =========================================== */
+        .poll-hand {
+            font-size: clamp(3rem, 8vw, 6rem);
+        }
+
+        .poll-question {
+            font-family: var(--font-display);
+            font-size: clamp(1.5rem, 4vw, 3rem);
+            font-weight: 600;
+        }
+
+        .poll-subtitle {
+            font-size: var(--big-body);
+            color: var(--text-dim);
+        }
+
+        /* ===========================================
+           UI: PROGRESS BAR, NAV DOTS, COUNTER
+           =========================================== */
+        .progress-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 3px;
+            background: var(--accent);
+            z-index: 100;
+            transition: width 0.4s var(--ease);
+            box-shadow: 0 0 10px var(--accent-glow);
+        }
+
+        .nav-dots {
+            position: fixed;
+            right: clamp(0.5rem, 1.5vw, 1.25rem);
+            top: 50%;
+            transform: translateY(-50%);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            z-index: 100;
+        }
+
+        .nav-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--border);
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s var(--ease);
+            padding: 0;
+        }
+
+        .nav-dot.active {
+            background: var(--accent);
+            box-shadow: 0 0 8px var(--accent-glow);
+            transform: scale(1.4);
+        }
+
+        .nav-dot:hover:not(.active) {
+            background: var(--text-dim);
+        }
+
+        .slide-counter {
+            position: fixed;
+            bottom: clamp(0.5rem, 1.5vw, 1.25rem);
+            left: clamp(0.8rem, 2vw, 1.5rem);
+            font-size: var(--small-size);
+            color: var(--text-dim);
+            font-family: var(--font-body);
+            font-weight: 500;
+            z-index: 100;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .keyboard-hint {
+            position: fixed;
+            bottom: clamp(0.5rem, 1.5vw, 1.25rem);
+            right: clamp(0.8rem, 2vw, 1.5rem);
+            font-size: var(--small-size);
+            color: var(--text-dim);
+            z-index: 100;
+            transition: opacity 1s ease;
+        }
+
+        .keyboard-hint.hidden { opacity: 0; pointer-events: none; }
+
+        /* ===========================================
+           NEAR AI BRANDING (subtle)
+           =========================================== */
+        .near-badge {
+            font-family: var(--font-display);
+            font-size: var(--small-size);
+            color: var(--text-dim);
+            font-weight: 500;
+            letter-spacing: 0.05em;
+        }
+
+        .near-badge .near { color: var(--accent); font-weight: 600; }
+
+        /* ===========================================
+           RESPONSIVE BREAKPOINTS
+           =========================================== */
+        @media (max-height: 700px) {
+            :root {
+                --slide-padding: clamp(1rem, 3vw, 2.5rem);
+                --content-gap: clamp(0.5rem, 1.5vw, 1.5rem);
+                --title-size: clamp(1.6rem, 5vw, 3.5rem);
+                --h2-size: clamp(1.2rem, 3.2vw, 2.2rem);
+            }
+        }
+
+        @media (max-height: 600px) {
+            :root {
+                --slide-padding: clamp(0.75rem, 2.5vw, 1.5rem);
+                --content-gap: clamp(0.4rem, 1vw, 1rem);
+                --title-size: clamp(1.3rem, 4.5vw, 2.5rem);
+                --h2-size: clamp(1rem, 3vw, 1.8rem);
+                --body-size: clamp(0.7rem, 1.2vw, 0.95rem);
+            }
+            .nav-dots, .keyboard-hint { display: none; }
+        }
+
+        @media (max-height: 500px) {
+            :root {
+                --slide-padding: clamp(0.5rem, 2vw, 1rem);
+                --title-size: clamp(1.1rem, 4vw, 2rem);
+                --h2-size: clamp(0.9rem, 2.5vw, 1.4rem);
+                --body-size: clamp(0.65rem, 1vw, 0.85rem);
+            }
+        }
+
+        @media (max-width: 600px) {
+            :root {
+                --title-size: clamp(1.5rem, 8vw, 3rem);
+            }
+            .zones { flex-direction: column; }
+            .barrier {
+                width: 100%;
+                height: 3px;
+                background: linear-gradient(to right, transparent, var(--accent), transparent);
+            }
+            .arch-flow { flex-wrap: wrap; justify-content: center; }
+            .scale-comparison { flex-direction: column; }
+            .scale-arrow { transform: rotate(90deg); }
+            .concept-grid { grid-template-columns: 1fr; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                transition-duration: 0.2s !important;
+            }
+            html { scroll-behavior: auto; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- UI Elements -->
+    <div class="progress-bar" id="progress"></div>
+
+    <nav class="nav-dots" id="navDots"></nav>
+
+    <div class="slide-counter">
+        <span id="currentSlide">1</span> / <span id="totalSlides">11</span>
+    </div>
+
+    <div class="keyboard-hint" id="keyHint">Space or arrow keys to navigate</div>
+
+    <!-- ===========================================
+         SLIDE 1: TITLE
+         =========================================== -->
+    <section class="slide" id="slide-0">
+        <div class="bg-orb orb-green" style="width:400px;height:400px;top:-10%;right:-5%;"></div>
+        <div class="bg-orb orb-blue" style="width:350px;height:350px;bottom:-10%;left:-5%;"></div>
+        <div class="slide-content">
+            <div class="tag reveal">NEAR AI</div>
+            <h1 class="reveal"><span class="accent">Beyond</span> Mac Mini</h1>
+            <div class="separator reveal"></div>
+            <p class="big reveal" style="color:var(--text-mid);">Scaling Verifiable AI Agents with TEEs</p>
+            <div class="near-badge reveal" style="margin-top: clamp(0.5rem, 1.5vw, 1.5rem);">
+                Pierre Le Guen &nbsp;|&nbsp; <span class="near">NEAR</span> AI
+            </div>
+        </div>
+    </section>
+
+    <!-- ===========================================
+         SLIDE 2: AUDIENCE POLL
+         =========================================== -->
+    <section class="slide" id="slide-1">
+        <div class="slide-content">
+            <div class="reveal dim" style="font-size:var(--body-size);text-transform:uppercase;letter-spacing:0.15em;font-weight:500;">Quick question</div>
+            <div class="poll-hand reveal">&#9995;</div>
+            <div class="poll-question reveal">Who's heard of <span class="accent">TEEs</span>?</div>
+            <div class="poll-subtitle reveal">Trusted Execution Environments</div>
+        </div>
+    </section>
+
+    <!-- ===========================================
+         SLIDE 3: THE PROBLEM
+         3 progressive steps
+         =========================================== -->
+    <section class="slide" id="slide-2" data-total-steps="3">
+        <div class="bg-orb" style="width:300px;height:300px;background:var(--danger);opacity:0.04;top:20%;left:10%;"></div>
+        <div class="slide-content" style="gap: clamp(0.6rem, 2vw, 1.8rem);">
+            <h2 class="reveal">Your AI agent runs on<br><span style="color:var(--text-dim)">someone else's server</span></h2>
+            <div style="display:flex;flex-direction:column;gap:clamp(0.4rem,1vw,0.8rem);align-items:center;">
+                <div class="problem-item" data-step="1">
+                    <span>It handles your <span class="bold">wallets</span>, <span class="bold">API keys</span>, <span class="bold">private data</span></span>
+                </div>
+                <div class="problem-item" data-step="2">
+                    <span>The server operator can <span class="bold" style="color:var(--danger)">see everything</span></span>
+                </div>
+            </div>
+            <div class="big-question" data-step="3">"What if even the cloud provider<br>can't see your data?"</div>
+        </div>
+    </section>
+
+    <!-- ===========================================
+         SLIDE 4: WHAT IS A TEE
+         =========================================== -->
+    <section class="slide" id="slide-3">
+        <div class="bg-orb orb-green" style="width:350px;height:350px;bottom:10%;right:15%;"></div>
+        <div class="slide-content">
+            <div class="tag reveal">Definition</div>
+            <h2 class="reveal">A <span class="accent">vault</span> inside the CPU</h2>
+            <p class="big reveal" style="max-width:min(80vw,650px);">
+                A hardware-isolated secure area in the processor.<br>
+                Code and data inside are protected from <span class="bold">everything</span> outside.
+            </p>
+        </div>
+    </section>
+
+    <!-- ===========================================
+         SLIDE 5: TEE DIAGRAM
+         =========================================== -->
+    <section class="slide" id="slide-4">
+        <div class="slide-content">
+            <h2 class="reveal" style="font-size:var(--h3-size);color:var(--text-dim);text-transform:uppercase;letter-spacing:0.1em;">Inside vs Outside the TEE</h2>
+            <div class="tee-diagram reveal">
+                <div class="processor">
+                    <div class="processor-label">Processor</div>
+                    <div class="zones">
+                        <div class="zone zone-untrusted">
+                            <div class="zone-label">Blocked</div>
+                            <div class="zone-item"><span class="x-mark">&#10005;</span> <span>Operating System</span></div>
+                            <div class="zone-item"><span class="x-mark">&#10005;</span> <span>Hypervisor</span></div>
+                            <div class="zone-item"><span class="x-mark">&#10005;</span> <span>Cloud Operator</span></div>
+                            <div class="zone-item"><span class="x-mark">&#10005;</span> <span>Physical Access</span></div>
+                        </div>
+                        <div class="barrier"></div>
+                        <div class="zone zone-trusted">
+                            <div class="zone-label">Trusted Execution Environment</div>
+                            <div class="zone-item"><span class="check-mark">&#10003;</span> <span class="bold">Your Agent</span></div>
+                            <div class="zone-item"><span class="check-mark">&#10003;</span> <span class="bold">Code &amp; Data</span></div>
+                            <div class="zone-item"><span class="check-mark">&#10003;</span> <span class="bold">Private Keys</span></div>
+                            <div class="zone-item"><span class="check-mark">&#10003;</span> <span class="bold">Encrypted Memory</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===========================================
+         SLIDE 6: HOW TEEs WORK - 4 concepts
+         4 progressive steps
+         =========================================== -->
+    <section class="slide" id="slide-5" data-total-steps="4">
+        <div class="slide-content">
+            <h2 class="reveal">How TEEs Work</h2>
+            <div class="concept-grid">
+                <div class="concept-card" data-step="1">
+                    <div class="concept-icon">&#9889;</div>
+                    <h3>Hardware Root of Trust</h3>
+                    <p>Crypto keys baked into silicon at the factory. Not software, not config &mdash; <strong style="color:var(--text)">hardware</strong>.</p>
+                </div>
+                <div class="concept-card" data-step="2">
+                    <div class="concept-icon">&#128272;</div>
+                    <h3>Memory Encryption</h3>
+                    <p>RAM is encrypted in real-time. Physical access to the machine = <strong style="color:var(--text)">gibberish</strong>.</p>
+                </div>
+                <div class="concept-card" data-step="3">
+                    <div class="concept-icon">&#128270;</div>
+                    <h3>Measurements</h3>
+                    <p>TEE hashes everything loaded into it. Creates a unique <strong style="color:var(--text)">fingerprint</strong> of the code.</p>
+                </div>
+                <div class="concept-card" data-step="4">
+                    <div class="concept-icon">&#9989;</div>
+                    <h3>Remote Attestation</h3>
+                    <p>Anyone can verify that fingerprint remotely. This is why it <strong style="color:var(--accent)">can't be faked</strong>.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===========================================
+         SLIDE 7: NEAR AI + TEEs
+         3 progressive steps
+         =========================================== -->
+    <section class="slide" id="slide-6" data-total-steps="3">
+        <div class="bg-orb orb-green" style="width:300px;height:300px;top:10%;left:-5%;"></div>
+        <div class="slide-content" style="gap: clamp(0.6rem, 2vw, 1.8rem);">
+            <div class="tag reveal">NEAR AI</div>
+            <h2 class="reveal">Agents that hold real assets<br>need <span class="accent">real security</span></h2>
+            <div style="display:flex;flex-direction:column;gap:clamp(0.3rem,0.8vw,0.6rem);align-items:center;">
+                <div class="problem-item" data-step="1">
+                    <span>Agents manage <span class="bold">wallets and private keys</span></span>
+                </div>
+                <div class="problem-item" data-step="2">
+                    <span>They access <span class="bold">sensitive user data</span></span>
+                </div>
+                <div class="problem-item" data-step="3">
+                    <span>They execute <span class="bold">financial transactions</span></span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===========================================
+         SLIDE 8: ARCHITECTURE
+         =========================================== -->
+    <section class="slide" id="slide-7">
+        <div class="slide-content" style="gap: clamp(0.6rem, 2vw, 1.8rem);">
+            <h2 class="reveal">How It Works at <span class="accent">NEAR AI</span></h2>
+            <div class="arch-flow reveal">
+                <div class="arch-node">
+                    <div class="arch-node-icon">&#128100;</div>
+                    <div class="arch-node-label">User</div>
+                    <div class="arch-node-detail">Deploys agent</div>
+                </div>
+                <div class="arch-arrow">&rarr;</div>
+                <div class="arch-node">
+                    <div class="arch-node-icon">&#9729;&#65039;</div>
+                    <div class="arch-node-label">NEAR AI</div>
+                    <div class="arch-node-detail">Cloud infra</div>
+                </div>
+                <div class="arch-arrow">&rarr;</div>
+                <div class="arch-node highlighted">
+                    <div class="arch-node-icon">&#128274;</div>
+                    <div class="arch-node-label">TEE Enclave</div>
+                    <div class="arch-node-detail">Encrypted agent</div>
+                </div>
+                <div class="arch-arrow accent">&larr;</div>
+                <div class="arch-node">
+                    <div class="arch-node-icon">&#9989;</div>
+                    <div class="arch-node-label">Attestation</div>
+                    <div class="arch-node-detail">User verifies</div>
+                </div>
+            </div>
+            <div class="reveal" style="display:flex;flex-direction:column;gap:clamp(0.2rem,0.5vw,0.4rem);align-items:center;">
+                <p style="color:var(--text-mid);">Code + data <span class="bold">encrypted in memory</span></p>
+                <p style="color:var(--text-mid);">Operators <span class="bold" style="color:var(--accent);">cannot inspect</span> what's running</p>
+                <p style="color:var(--text-mid);">Private inference with <span class="bold">GLM-5</span> on NEAR AI Cloud</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===========================================
+         SLIDE 9: BEYOND MAC MINI (Scaling)
+         2 progressive steps
+         =========================================== -->
+    <section class="slide" id="slide-8" data-total-steps="2">
+        <div class="bg-orb orb-blue" style="width:350px;height:350px;top:15%;right:10%;"></div>
+        <div class="slide-content">
+            <h2 class="reveal"><span class="accent">Beyond</span> Mac Mini</h2>
+            <div class="scale-comparison" data-step="1">
+                <div class="scale-box">
+                    <div class="scale-icon">&#128421;</div>
+                    <div class="scale-label">Mac Mini</div>
+                    <div class="scale-detail">Single machine</div>
+                </div>
+                <div class="scale-arrow">&rarr;</div>
+                <div class="scale-box">
+                    <div class="scale-multi">
+                        <div class="scale-multi-item">&#128274;</div>
+                        <div class="scale-multi-item">&#128274;</div>
+                        <div class="scale-multi-item">&#128274;</div>
+                        <div class="scale-multi-item">&#128274;</div>
+                        <div class="scale-multi-item">&#128274;</div>
+                        <div class="scale-multi-item">&#128274;</div>
+                    </div>
+                    <div class="scale-label" style="margin-top:clamp(0.3rem,0.8vw,0.5rem);">Cloud TEEs</div>
+                    <div class="scale-detail">NEAR AI Cloud</div>
+                </div>
+            </div>
+            <p class="big" data-step="2" style="color:var(--accent);font-weight:600;font-family:var(--font-display);">
+                Same security guarantees. Infinite scale.
+            </p>
+        </div>
+    </section>
+
+    <!-- ===========================================
+         SLIDE 10: WHY THIS MATTERS
+         3 progressive steps (last step includes the shift statement)
+         =========================================== -->
+    <section class="slide" id="slide-9" data-total-steps="3">
+        <div class="slide-content" style="gap: clamp(0.6rem, 2vw, 1.8rem);">
+            <h2 class="reveal">Why This Matters</h2>
+            <div class="matters-list">
+                <div class="matters-item" data-step="1">
+                    <span class="matters-label">Builders</span>
+                    <span class="matters-text">Deploy agents users can <span class="bold">actually trust</span></span>
+                </div>
+                <div class="matters-item" data-step="2">
+                    <span class="matters-label">Users</span>
+                    <span class="matters-text"><span class="bold">Verifiable AI</span> &mdash; don't "just trust" the platform</span>
+                </div>
+                <div class="matters-item" data-step="3">
+                    <span class="matters-label">Ecosystem</span>
+                    <span class="matters-text">Autonomous agents holding <span class="bold">real assets</span></span>
+                </div>
+            </div>
+            <div class="shift-statement" data-step="3">
+                <span class="shift-from">"Trust the operator"</span>
+                <span class="shift-arrow">&rarr;</span>
+                <span class="shift-to">"Trust the hardware + verify"</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===========================================
+         SLIDE 11: CLOSING
+         =========================================== -->
+    <section class="slide" id="slide-10">
+        <div class="bg-orb orb-green" style="width:400px;height:400px;bottom:-10%;left:30%;"></div>
+        <div class="slide-content" style="gap:clamp(0.8rem,2vw,1.5rem);">
+            <h2 class="reveal" style="font-size:var(--h2-size);">Deploy your agent in a TEE</h2>
+            <div class="reveal" style="display:flex;align-items:center;gap:clamp(1.5rem,4vw,3rem);flex-wrap:wrap;justify-content:center;">
+                <!-- Real QR code for https://agent.near.ai -->
+                <svg viewBox="0 0 29 29" style="width:clamp(120px,18vw,200px);height:clamp(120px,18vw,200px);border-radius:clamp(8px,1vw,14px);background:white;padding:8px;">
+                    <rect width="29" height="29" fill="white"/>
+                    <path d="M2,2H3V3H2zM3,2H4V3H3zM4,2H5V3H4zM5,2H6V3H5zM6,2H7V3H6zM7,2H8V3H7zM8,2H9V3H8zM10,2H11V3H10zM14,2H15V3H14zM15,2H16V3H15zM20,2H21V3H20zM21,2H22V3H21zM22,2H23V3H22zM23,2H24V3H23zM24,2H25V3H24zM25,2H26V3H25zM26,2H27V3H26zM2,3H3V4H2zM8,3H9V4H8zM10,3H11V4H10zM11,3H12V4H11zM12,3H13V4H12zM16,3H17V4H16zM18,3H19V4H18zM20,3H21V4H20zM26,3H27V4H26zM2,4H3V5H2zM4,4H5V5H4zM5,4H6V5H5zM6,4H7V5H6zM8,4H9V5H8zM10,4H11V5H10zM11,4H12V5H11zM15,4H16V5H15zM17,4H18V5H17zM18,4H19V5H18zM20,4H21V5H20zM22,4H23V5H22zM23,4H24V5H23zM24,4H25V5H24zM26,4H27V5H26zM2,5H3V6H2zM4,5H5V6H4zM5,5H6V6H5zM6,5H7V6H6zM8,5H9V6H8zM11,5H12V6H11zM12,5H13V6H12zM13,5H14V6H13zM14,5H15V6H14zM15,5H16V6H15zM16,5H17V6H16zM18,5H19V6H18zM20,5H21V6H20zM22,5H23V6H22zM23,5H24V6H23zM24,5H25V6H24zM26,5H27V6H26zM2,6H3V7H2zM4,6H5V7H4zM5,6H6V7H5zM6,6H7V7H6zM8,6H9V7H8zM10,6H11V7H10zM11,6H12V7H11zM12,6H13V7H12zM15,6H16V7H15zM16,6H17V7H16zM18,6H19V7H18zM20,6H21V7H20zM22,6H23V7H22zM23,6H24V7H23zM24,6H25V7H24zM26,6H27V7H26zM2,7H3V8H2zM8,7H9V8H8zM11,7H12V8H11zM15,7H16V8H15zM16,7H17V8H16zM20,7H21V8H20zM26,7H27V8H26zM2,8H3V9H2zM3,8H4V9H3zM4,8H5V9H4zM5,8H6V9H5zM6,8H7V9H6zM7,8H8V9H7zM8,8H9V9H8zM10,8H11V9H10zM12,8H13V9H12zM14,8H15V9H14zM16,8H17V9H16zM18,8H19V9H18zM20,8H21V9H20zM21,8H22V9H21zM22,8H23V9H22zM23,8H24V9H23zM24,8H25V9H24zM25,8H26V9H25zM26,8H27V9H26zM15,9H16V10H15zM16,9H17V10H16zM18,9H19V10H18zM2,10H3V11H2zM5,10H6V11H5zM6,10H7V11H6zM7,10H8V11H7zM8,10H9V11H8zM9,10H10V11H9zM10,10H11V11H10zM11,10H12V11H11zM13,10H14V11H13zM16,10H17V11H16zM17,10H18V11H17zM18,10H19V11H18zM19,10H20V11H19zM22,10H23V11H22zM24,10H25V11H24zM25,10H26V11H25zM26,10H27V11H26zM2,11H3V12H2zM3,11H4V12H3zM4,11H5V12H4zM5,11H6V12H5zM9,11H10V12H9zM11,11H12V12H11zM12,11H13V12H12zM13,11H14V12H13zM14,11H15V12H14zM16,11H17V12H16zM17,11H18V12H17zM21,11H22V12H21zM22,11H23V12H22zM23,11H24V12H23zM24,11H25V12H24zM25,11H26V12H25zM2,12H3V13H2zM8,12H9V13H8zM9,12H10V13H9zM12,12H13V13H12zM13,12H14V13H13zM14,12H15V13H14zM16,12H17V13H16zM17,12H18V13H17zM20,12H21V13H20zM21,12H22V13H21zM22,12H23V13H22zM23,12H24V13H23zM26,12H27V13H26zM7,13H8V14H7zM9,13H10V14H9zM11,13H12V14H11zM12,13H13V14H12zM14,13H15V14H14zM16,13H17V14H16zM17,13H18V14H17zM23,13H24V14H23zM24,13H25V14H24zM25,13H26V14H25zM26,13H27V14H26zM2,14H3V15H2zM3,14H4V15H3zM4,14H5V15H4zM5,14H6V15H5zM6,14H7V15H6zM7,14H8V15H7zM8,14H9V15H8zM9,14H10V15H9zM10,14H11V15H10zM11,14H12V15H11zM13,14H14V15H13zM14,14H15V15H14zM18,14H19V15H18zM20,14H21V15H20zM21,14H22V15H21zM26,14H27V15H26zM2,15H3V16H2zM4,15H5V16H4zM5,15H6V16H5zM6,15H7V16H6zM7,15H8V16H7zM9,15H10V16H9zM12,15H13V16H12zM16,15H17V16H16zM17,15H18V16H17zM18,15H19V16H18zM22,15H23V16H22zM25,15H26V16H25zM2,16H3V17H2zM3,16H4V17H3zM4,16H5V17H4zM7,16H8V17H7zM8,16H9V17H8zM9,16H10V17H9zM12,16H13V17H12zM13,16H14V17H13zM14,16H15V17H14zM15,16H16V17H15zM17,16H18V17H17zM18,16H19V17H18zM19,16H20V17H19zM20,16H21V17H20zM22,16H23V17H22zM23,16H24V17H23zM24,16H25V17H24zM25,16H26V17H25zM26,16H27V17H26zM2,17H3V18H2zM6,17H7V18H6zM10,17H11V18H10zM12,17H13V18H12zM13,17H14V18H13zM17,17H18V18H17zM19,17H20V18H19zM20,17H21V18H20zM21,17H22V18H21zM23,17H24V18H23zM24,17H25V18H24zM26,17H27V18H26zM2,18H3V19H2zM4,18H5V19H4zM6,18H7V19H6zM7,18H8V19H7zM8,18H9V19H8zM9,18H10V19H9zM10,18H11V19H10zM11,18H12V19H11zM12,18H13V19H12zM16,18H17V19H16zM18,18H19V19H18zM19,18H20V19H19zM20,18H21V19H20zM21,18H22V19H21zM22,18H23V19H22zM24,18H25V19H24zM25,18H26V19H25zM10,19H11V20H10zM11,19H12V20H11zM12,19H13V20H12zM13,19H14V20H13zM14,19H15V20H14zM15,19H16V20H15zM18,19H19V20H18zM22,19H23V20H22zM24,19H25V20H24zM25,19H26V20H25zM2,20H3V21H2zM3,20H4V21H3zM4,20H5V21H4zM5,20H6V21H5zM6,20H7V21H6zM7,20H8V21H7zM8,20H9V21H8zM10,20H11V21H10zM11,20H12V21H11zM13,20H14V21H13zM18,20H19V21H18zM20,20H21V21H20zM22,20H23V21H22zM26,20H27V21H26zM2,21H3V22H2zM8,21H9V22H8zM10,21H11V22H10zM14,21H15V22H14zM16,21H17V22H16zM18,21H19V22H18zM22,21H23V22H22zM25,21H26V22H25zM26,21H27V22H26zM2,22H3V23H2zM4,22H5V23H4zM5,22H6V23H5zM6,22H7V23H6zM8,22H9V23H8zM10,22H11V23H10zM12,22H13V23H12zM14,22H15V23H14zM15,22H16V23H15zM16,22H17V23H16zM17,22H18V23H17zM18,22H19V23H18zM19,22H20V23H19zM20,22H21V23H20zM21,22H22V23H21zM22,22H23V23H22zM25,22H26V23H25zM26,22H27V23H26zM2,23H3V24H2zM4,23H5V24H4zM5,23H6V24H5zM6,23H7V24H6zM8,23H9V24H8zM10,23H11V24H10zM12,23H13V24H12zM16,23H17V24H16zM18,23H19V24H18zM19,23H20V24H19zM20,23H21V24H20zM25,23H26V24H25zM26,23H27V24H26zM2,24H3V25H2zM4,24H5V25H4zM5,24H6V25H5zM6,24H7V25H6zM8,24H9V25H8zM12,24H13V25H12zM14,24H15V25H14zM16,24H17V25H16zM19,24H20V25H19zM22,24H23V25H22zM23,24H24V25H23zM24,24H25V25H24zM25,24H26V25H25zM26,24H27V25H26zM2,25H3V26H2zM8,25H9V26H8zM16,25H17V26H16zM17,25H18V26H17zM21,25H22V26H21zM22,25H23V26H22zM24,25H26V26H24zM26,25H27V26H26zM2,26H3V27H2zM3,26H4V27H3zM4,26H5V27H4zM5,26H6V27H5zM6,26H7V27H6zM7,26H8V27H7zM8,26H9V27H8zM10,26H11V27H10zM11,26H12V27H11zM15,26H16V27H15zM16,26H17V27H16zM18,26H19V27H18zM19,26H20V27H19zM23,26H24V27H23zM26,26H27V27H26z" fill="#000"/></svg>
+                <div style="text-align:left;display:flex;flex-direction:column;gap:clamp(0.4rem,1vw,0.8rem);">
+                    <p class="big" style="color:var(--text-mid);">Deploy your agent in a TEE<br>in a few clicks</p>
+                    <p style="font-family:var(--font-display);font-size:var(--h2-size);font-weight:700;">
+                        <span class="accent">agent.near.ai</span>
+                    </p>
+                </div>
+            </div>
+            <div class="reveal" style="margin-top:clamp(0.5rem,1.5vw,1.5rem);font-family:var(--font-display);font-size:var(--h2-size);font-weight:600;color:var(--text-dim);">
+                Questions?
+            </div>
+        </div>
+    </section>
+
+
+    <!-- ===========================================
+       PRESENTATION CONTROLLER
+       Handles navigation, progressive reveals, and UI
+       =========================================== -->
+    <script>
+        class SlidePresentation {
+            constructor() {
+                this.slides = document.querySelectorAll('.slide');
+                this.totalSlides = this.slides.length;
+                this.currentSlide = 0;
+                this.currentStep = 0;
+                this.isScrolling = false;
+                this.scrollTimeout = null;
+
+                this.init();
+            }
+
+            init() {
+                this.buildNavDots();
+                this.setupKeyboard();
+                this.setupWheel();
+                this.setupTouch();
+                this.setupIntersectionObserver();
+                this.updateUI();
+                this.activateSlide(0);
+                this.hideKeyboardHint();
+
+                document.getElementById('totalSlides').textContent = this.totalSlides;
+            }
+
+            /* Total progressive steps for a given slide */
+            getTotalSteps(index) {
+                return parseInt(this.slides[index]?.dataset.totalSteps || '0');
+            }
+
+            /* Build navigation dots */
+            buildNavDots() {
+                const nav = document.getElementById('navDots');
+                for (let i = 0; i < this.totalSlides; i++) {
+                    const dot = document.createElement('button');
+                    dot.className = 'nav-dot';
+                    dot.setAttribute('aria-label', `Go to slide ${i + 1}`);
+                    dot.addEventListener('click', () => this.goToSlide(i));
+                    nav.appendChild(dot);
+                }
+            }
+
+            /* Keyboard navigation */
+            setupKeyboard() {
+                document.addEventListener('keydown', (e) => {
+                    switch(e.key) {
+                        case 'ArrowRight':
+                        case 'ArrowDown':
+                        case ' ':
+                            e.preventDefault();
+                            this.next();
+                            break;
+                        case 'ArrowLeft':
+                        case 'ArrowUp':
+                            e.preventDefault();
+                            this.prev();
+                            break;
+                        case 'Home':
+                            e.preventDefault();
+                            this.goToSlide(0);
+                            break;
+                        case 'End':
+                            e.preventDefault();
+                            this.goToSlide(this.totalSlides - 1, true);
+                            break;
+                    }
+                });
+            }
+
+            /* Mouse wheel navigation (debounced) */
+            setupWheel() {
+                document.addEventListener('wheel', (e) => {
+                    if (this.isScrolling) return;
+                    this.isScrolling = true;
+
+                    if (e.deltaY > 30) this.next();
+                    else if (e.deltaY < -30) this.prev();
+
+                    clearTimeout(this.scrollTimeout);
+                    this.scrollTimeout = setTimeout(() => {
+                        this.isScrolling = false;
+                    }, 600);
+                }, { passive: true });
+            }
+
+            /* Touch / swipe navigation */
+            setupTouch() {
+                let startY = 0;
+                let startX = 0;
+
+                document.addEventListener('touchstart', (e) => {
+                    startY = e.touches[0].clientY;
+                    startX = e.touches[0].clientX;
+                }, { passive: true });
+
+                document.addEventListener('touchend', (e) => {
+                    const deltaY = startY - e.changedTouches[0].clientY;
+                    const deltaX = startX - e.changedTouches[0].clientX;
+
+                    if (Math.abs(deltaY) < 40 && Math.abs(deltaX) < 40) return;
+
+                    if (Math.abs(deltaY) > Math.abs(deltaX)) {
+                        if (deltaY > 0) this.next();
+                        else this.prev();
+                    } else {
+                        if (deltaX > 0) this.next();
+                        else this.prev();
+                    }
+                }, { passive: true });
+            }
+
+            /* Intersection observer for scroll-snap sync */
+            setupIntersectionObserver() {
+                const observer = new IntersectionObserver((entries) => {
+                    entries.forEach(entry => {
+                        if (entry.isIntersecting && entry.intersectionRatio > 0.5) {
+                            const index = Array.from(this.slides).indexOf(entry.target);
+                            if (index !== this.currentSlide) {
+                                this.currentSlide = index;
+                                this.currentStep = 0;
+                                this.updateUI();
+                            }
+                            entry.target.classList.add('visible');
+                        }
+                    });
+                }, { threshold: 0.5 });
+
+                this.slides.forEach(slide => observer.observe(slide));
+            }
+
+            /* Advance: reveal next step or go to next slide */
+            next() {
+                const totalSteps = this.getTotalSteps(this.currentSlide);
+
+                if (this.currentStep < totalSteps) {
+                    this.currentStep++;
+                    this.revealStep(this.currentSlide, this.currentStep);
+                } else if (this.currentSlide < this.totalSlides - 1) {
+                    this.goToSlide(this.currentSlide + 1);
+                }
+            }
+
+            /* Go back: hide last step or go to previous slide */
+            prev() {
+                if (this.currentStep > 0) {
+                    this.hideStep(this.currentSlide, this.currentStep);
+                    this.currentStep--;
+                } else if (this.currentSlide > 0) {
+                    this.goToSlide(this.currentSlide - 1, true);
+                }
+            }
+
+            /* Navigate to a specific slide */
+            goToSlide(index, showAllSteps = false) {
+                if (index < 0 || index >= this.totalSlides) return;
+
+                /* Hide all steps on current slide when leaving */
+                this.hideAllSteps(this.currentSlide);
+
+                this.currentSlide = index;
+                this.currentStep = showAllSteps ? this.getTotalSteps(index) : 0;
+
+                this.slides[index].scrollIntoView({ behavior: 'smooth' });
+                this.activateSlide(index);
+
+                if (showAllSteps) {
+                    this.revealAllSteps(index);
+                }
+
+                this.updateUI();
+            }
+
+            /* Mark a slide as active (add visible class) */
+            activateSlide(index) {
+                this.slides[index].classList.add('visible');
+            }
+
+            /* Reveal a specific step within a slide */
+            revealStep(slideIndex, step) {
+                const slide = this.slides[slideIndex];
+                const els = slide.querySelectorAll(`[data-step="${step}"]`);
+                els.forEach(el => el.classList.add('step-visible'));
+            }
+
+            /* Hide a specific step */
+            hideStep(slideIndex, step) {
+                const slide = this.slides[slideIndex];
+                const els = slide.querySelectorAll(`[data-step="${step}"]`);
+                els.forEach(el => el.classList.remove('step-visible'));
+            }
+
+            /* Reveal all steps at once (used when navigating backwards) */
+            revealAllSteps(slideIndex) {
+                const total = this.getTotalSteps(slideIndex);
+                for (let i = 1; i <= total; i++) {
+                    this.revealStep(slideIndex, i);
+                }
+            }
+
+            /* Hide all steps (used when leaving a slide) */
+            hideAllSteps(slideIndex) {
+                const slide = this.slides[slideIndex];
+                const els = slide.querySelectorAll('[data-step]');
+                els.forEach(el => el.classList.remove('step-visible'));
+            }
+
+            /* Update all UI elements */
+            updateUI() {
+                /* Progress bar */
+                const progress = ((this.currentSlide + 1) / this.totalSlides) * 100;
+                document.getElementById('progress').style.width = `${progress}%`;
+
+                /* Slide counter */
+                document.getElementById('currentSlide').textContent = this.currentSlide + 1;
+
+                /* Nav dots */
+                const dots = document.querySelectorAll('.nav-dot');
+                dots.forEach((dot, i) => {
+                    dot.classList.toggle('active', i === this.currentSlide);
+                });
+            }
+
+            /* Auto-hide keyboard hint after first navigation */
+            hideKeyboardHint() {
+                const hint = document.getElementById('keyHint');
+                setTimeout(() => {
+                    const handler = () => {
+                        hint.classList.add('hidden');
+                        document.removeEventListener('keydown', handler);
+                    };
+                    document.addEventListener('keydown', handler);
+                }, 2000);
+
+                /* Also hide after 8 seconds regardless */
+                setTimeout(() => hint.classList.add('hidden'), 8000);
+            }
+        }
+
+        /* Initialize presentation */
+        document.addEventListener('DOMContentLoaded', () => {
+            new SlidePresentation();
+        });
+    </script>
+</body>
+</html>
